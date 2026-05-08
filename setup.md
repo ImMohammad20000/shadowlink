@@ -50,7 +50,10 @@ sudo su
 ![App Screenshot](https://raw.githubusercontent.com/ImMohammad20000/shadowlink/main/pics/panel_url.png)
 
 ## آموزش راه اندازی: کلاینت
-بعد از اتصال دو اینترنت "استارلینک" و "ایران"، پروژه رو روی کامپیوتر دانلود کرده، وارد فولدر client میشیم و فایل shadowlink.bat رو اجرا میکنیم:
+بعد از اتصال دو اینترنت "استارلینک" و "ایران"، پروژه رو روی کامپیوتر دانلود کرده، وارد فولدر client میشیم. در ویندوز فایل `shadowlink.bat` و در سیستم های Bash-based فایل `shadowlink.sh` رو اجرا میکنیم:
+
+#### نکته:
+در نسخه Bash، اسکریپت به صورت خودکار باینری Linux برنامه `xray` رو از `server/assets` بر اساس معماری سیستم استخراج و اجرا میکنه. در صورت نیاز میتونید با متغیر `XRAY_BIN` مسیر باینری دلخواهتون رو override کنید.
 
 ![App Screenshot](https://raw.githubusercontent.com/ImMohammad20000/shadowlink/main/pics/client_script.png)
 
