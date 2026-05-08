@@ -29,6 +29,49 @@
         "refresh": 5,
         "strategy": "always"
       },
+      "listen": "127.0.0.1",
+      "port": 7092,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "email": "reverse_tunel",
+            "flow": "",
+            "id": "reverse_tunnel_uuid"
+          }
+        ],
+        "decryption": "none",
+        "fallbacks": []
+      },
+      "sniffing": {
+        "destOverride": [
+          "http",
+          "tls",
+          "quic",
+          "fakedns"
+        ],
+        "enabled": false,
+        "metadataOnly": false,
+        "routeOnly": false
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none",
+        "tcpSettings": {
+          "acceptProxyProtocol": false,
+          "header": {
+            "type": "none"
+          }
+        }
+      },
+      "tag": "inbound-7092"
+    },
+    {
+      "allocate": {
+        "concurrency": 3,
+        "refresh": 5,
+        "strategy": "always"
+      },
       "listen": "0.0.0.0",
       "port": 7091,
       "protocol": "vless",
@@ -37,10 +80,13 @@
           {
             "email": "reverse_tunel",
             "flow": "",
-            "id": "uuid"
+            "id": "reverse_tunnel_uuid",
+            "reverse": {
+              "tag": "r-reverse"
+            }
           }
         ],
-        "decryption": "none",
+        "decryption": "reverse_tunnel_decryption",
         "fallbacks": []
       },
       "sniffing": {
@@ -105,14 +151,6 @@
       "statsOutboundUplink": false
     }
   },
-  "reverse": {
-    "portals": [
-      {
-        "domain": "reverse.xui",
-        "tag": "reverse-0"
-      }
-    ]
-  },
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
@@ -137,30 +175,12 @@
         ],
         "type": "field"
       },
-      {
-        "domain": [
-          "dnsleaktest.com"
-        ],
-        "outboundTag": "direct",
+       {
+        "outboundTag": "r-reverse",
         "type": "field"
-      },
-      {
-        "domain": [
-          "full:reverse.xui"
-        ],
-        "inboundTag": [
-          "inbound-7091"
-        ],
-        "outboundTag": "reverse-0",
-        "type": "field"
-      },
-      {
-        "inboundTag": [
-          "inbound-7091"
-        ],
-        "outboundTag": "reverse-0",
-        "type": "field"
+        "inboundTag": ["inbound-7091"],
       }
+  
     ]
   },
   "stats": {},

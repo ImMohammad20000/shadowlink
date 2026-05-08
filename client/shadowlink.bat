@@ -117,6 +117,19 @@ if "!uuid!"=="" (
     goto enter_uuid
 )
 
+:: Ask user to enter VLESS encryption key
+:enter_encryption
+echo.
+set /p encryption="Please enter the "[33mVLESS Encryption Key[0m": "
+
+:: Trim spaces and validate input
+for /f "tokens=* delims= " %%X in ("!encryption!") do set "encryption=%%X"
+
+if "!encryption!"=="" (
+    echo Please enter a valid VLESS encryption key.
+    goto enter_encryption
+)
+
 :: Save selections to "env" file
 (
     echo starlink_nic=!starlink_adapter!
@@ -125,6 +138,7 @@ if "!uuid!"=="" (
     echo iran_internet_ipv4=!iran_ipv4!
     echo bridge_server=!bridge_server!
     echo uuid=!uuid!
+    echo encryption=!encryption!
 ) > env
 echo;
 echo [34mSelections and IP addresses saved to "env" file.[0m
@@ -138,7 +152,7 @@ for /f "tokens=1,2 delims==" %%a in ('type env') do (
 )
 
 :: Use PowerShell to replace values in sample_config.json and create tunnel.json
-powershell -Command "(Get-Content sample_config.json) -replace 'starlink_ipv4', '%starlink_ipv4%' -replace 'iran_internet_ipv4', '%iran_internet_ipv4%' -replace 'bridge_server', '%bridge_server%' -replace 'uuid', '%uuid%' | Set-Content tunnel.json"
+powershell -Command "(Get-Content sample_config.json) -replace 'starlink_ipv4', '%starlink_ipv4%' -replace 'iran_internet_ipv4', '%iran_internet_ipv4%' -replace 'bridge_server', '%bridge_server%' -replace 'uuid', '%uuid%' -replace 'encryption_key', '%encryption%' | Set-Content tunnel.json"
 
 :: Check if tunnel.json exists, then run Xray
 if exist tunnel.json (
@@ -179,10 +193,11 @@ for /f "tokens=1,2 delims==" %%i in (env) do (
     if "%%i"=="iran_internet_ipv4" set "env_iran_ipv4=%%j"
     if "%%i"=="bridge_server" set "env_bridge_server=%%j"
     if "%%i"=="uuid" set "env_uuid=%%j"
+    if "%%i"=="encryption" set "env_encryption=%%j"
 )
 
 :: Trim spaces from the variables
-for %%X in (env_starlink_nic env_starlink_ipv4 env_iran_nic env_iran_ipv4 env_bridge_server env_uuid) do (
+for %%X in (env_starlink_nic env_starlink_ipv4 env_iran_nic env_iran_ipv4 env_bridge_server env_uuid env_encryption) do (
     for /f "tokens=* delims= " %%Y in ("!%%X!") do set "%%X=%%Y"
 )
 
@@ -219,6 +234,18 @@ if not defined env_uuid (
     goto select_adapters
 )
 
+if not defined env_encryption (
+    echo [31mVLESS encryption entry is missing in the env file. Please enter it again.[0m
+    endlocal
+    goto select_adapters
+)
+
+if "!env_encryption!"=="" (
+    echo [31mVLESS encryption entry is empty in the env file. Please enter it again.[0m
+    endlocal
+    goto select_adapters
+)
+
 :: If adapters mismatch, ask for re-selection
 if not "!starlink_found!"=="true" (
     echo [31mStarlink NIC and IPv4 do not match. Please select again.[0m
@@ -241,7 +268,7 @@ for /f "tokens=1,2 delims==" %%a in ('type env') do (
 )
 
 :: Use PowerShell to replace values
-powershell -Command "(Get-Content sample_config.json) -replace 'starlink_ipv4', '%starlink_ipv4%' -replace 'iran_internet_ipv4', '%iran_internet_ipv4%' -replace 'bridge_server', '%bridge_server%' -replace 'uuid', '%uuid%' | Set-Content tunnel.json"
+powershell -Command "(Get-Content sample_config.json) -replace 'starlink_ipv4', '%starlink_ipv4%' -replace 'iran_internet_ipv4', '%iran_internet_ipv4%' -replace 'bridge_server', '%bridge_server%' -replace 'uuid', '%uuid%' -replace 'encryption_key', '%encryption%' | Set-Content tunnel.json"
 if exist tunnel.json (
 	echo Launching [31mShadowlink[0m Tunnel:
 	echo;

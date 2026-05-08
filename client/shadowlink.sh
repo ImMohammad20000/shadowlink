@@ -34,6 +34,7 @@ iran_internet_nic=""
 iran_internet_ipv4=""
 bridge_server=""
 uuid=""
+encryption=""
 
 print_banner() {
   printf '%b\n' "${RED}                                                  				${NC}"
@@ -202,6 +203,7 @@ generate_tunnel_config() {
   local iran_escaped
   local bridge_escaped
   local uuid_escaped
+  local encryption_escaped
 
   [[ -f $SAMPLE_CONFIG ]] || {
     printf '%b\n' "${RED}Error: sample config not found at ${SAMPLE_CONFIG}.${NC}"
@@ -212,12 +214,14 @@ generate_tunnel_config() {
   iran_escaped=$(escape_sed_replacement "$iran_internet_ipv4")
   bridge_escaped=$(escape_sed_replacement "$bridge_server")
   uuid_escaped=$(escape_sed_replacement "$uuid")
+  encryption_escaped=$(escape_sed_replacement "$encryption")
 
   sed \
     -e "s/starlink_ipv4/${starlink_escaped}/g" \
     -e "s/iran_internet_ipv4/${iran_escaped}/g" \
     -e "s/bridge_server/${bridge_escaped}/g" \
     -e "s/uuid/${uuid_escaped}/g" \
+    -e "s/encryption_key/${encryption_escaped}/g" \
     "$SAMPLE_CONFIG" >"$TUNNEL_JSON"
 }
 
@@ -245,6 +249,7 @@ load_env_file() {
   iran_internet_ipv4=""
   bridge_server=""
   uuid=""
+  encryption=""
 
   while IFS='=' read -r key value || [[ -n $key ]]; do
     key=$(trim "$key")
@@ -257,6 +262,7 @@ load_env_file() {
       iran_internet_ipv4) iran_internet_ipv4=$value ;;
       bridge_server) bridge_server=$value ;;
       uuid) uuid=$value ;;
+      encryption) encryption=$value ;;
     esac
   done <"$ENV_FILE"
 }
@@ -271,6 +277,11 @@ check_env_file() {
 
   if [[ -z $uuid ]]; then
     printf '%b\n' "${RED}UUID entry is missing or empty in the env file. Please enter it again.${NC}"
+    return 1
+  fi
+
+  if [[ -z $encryption ]]; then
+    printf '%b\n' "${RED}VLESS encryption entry is missing or empty in the env file. Please enter it again.${NC}"
     return 1
   fi
 
@@ -335,6 +346,7 @@ write_env_file() {
     printf 'iran_internet_ipv4=%s\n' "$iran_internet_ipv4"
     printf 'bridge_server=%s\n' "$bridge_server"
     printf 'uuid=%s\n' "$uuid"
+    printf 'encryption=%s\n' "$encryption"
   } >"$ENV_FILE"
 
   printf '\n%b\n\n' "${BLUE}Selections and IP addresses saved to \"env\" file.${NC}"
@@ -367,6 +379,8 @@ main() {
   bridge_server=$prompt_value
   prompt_for_text "Please enter the UUID: "
   uuid=$prompt_value
+  prompt_for_text "Please enter the VLESS encryption key: "
+  encryption=$prompt_value
 
   write_env_file
   launch_tunnel

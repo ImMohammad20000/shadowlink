@@ -39,11 +39,11 @@
         "vnext": [
           {
             "address": "127.0.0.1",
-            "port": 7091,
+            "port": 7092,
             "users": [
               {
                 "encryption": "none",
-                "id": "uuid"
+                "id": "reverse_tunnel_uuid"
               }
             ]
           }

@@ -55,9 +55,12 @@
             "port": 7091,
             "users": [
               {
-                "encryption": "none",
+                "encryption": "encryption_key",
                 "flow": "",
-                "id": "uuid"
+                "id": "uuid",
+                "reverse": {
+                  "tag": "r-reverse"
+                }
               }
             ]
           }
@@ -89,14 +92,6 @@
       "statsOutboundUplink": true
     }
   },
-  "reverse": {
-    "bridges": [
-      {
-        "domain": "reverse.xui",
-        "tag": "reverse-0"
-      }
-    ]
-  },
   "routing": {
     "domainStrategy": "AsIs",
     "rules": [
@@ -122,18 +117,8 @@
         "type": "field"
       },
       {
-        "domain": [
-          "full:reverse.xui"
-        ],
         "inboundTag": [
-          "reverse-0"
-        ],
-        "outboundTag": "reverse_tunel",
-        "type": "field"
-      },
-      {
-        "inboundTag": [
-          "reverse-0"
+          "r-reverse"
         ],
         "outboundTag": "starlink",
         "type": "field"

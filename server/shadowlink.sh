@@ -10,6 +10,9 @@ NC=$(tput sgr0)
 
 UUID=""
 CUSTOM_UUID=""
+VLESS_AUTHENTICATION_LABEL="Authentication: X25519, not Post-Quantum"
+VLESS_DECRYPTION=""
+VLESS_ENCRYPTION=""
 XUI_DB="/etc/3x-ui/x-ui.db"
 XUI_JSON="/opt/shadowlink/3x-ui.json"
 SQLITE_BIN="/opt/shadowlink/sqlite3/sqlite3"
@@ -63,6 +66,38 @@ parse_args() {
 resolve_ipv4() {
   if [[ -z $IPV4 ]]; then
     IPV4=$(hostname -I | awk '{print $1}')
+  fi
+}
+
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
+}
+
+extract_vlessenc_value() {
+  local vlessenc_output=$1
+  local field_name=$2
+
+  printf '%s\n' "$vlessenc_output" | awk -F'"' -v auth_label="$VLESS_AUTHENTICATION_LABEL" -v field_name="$field_name" '
+    $0 == auth_label { in_block = 1; next }
+    in_block && /^Authentication:/ { exit }
+    in_block && $2 == field_name { print $4; exit }
+  '
+}
+
+generate_vless_encryption_keys() {
+  local vlessenc_output=""
+
+  vlessenc_output=$(/opt/shadowlink/xray-core/xray vlessenc) || {
+    echo "${RED}Failed to generate VLESS encryption keys with xray vlessenc!${NC}"
+    exit 1
+  }
+
+  VLESS_DECRYPTION=$(extract_vlessenc_value "$vlessenc_output" "decryption")
+  VLESS_ENCRYPTION=$(extract_vlessenc_value "$vlessenc_output" "encryption")
+
+  if [[ -z $VLESS_DECRYPTION || -z $VLESS_ENCRYPTION ]]; then
+    echo "${RED}Failed to parse X25519 VLESS encryption keys from xray vlessenc output!${NC}"
+    exit 1
   fi
 }
 
@@ -257,16 +292,34 @@ shadowlink_remover() {
     rm -f /usr/bin/x-ui
     rm -rf /root/x-ui
 }
+
 uuid_setup() {
+  local escaped_uuid=""
+  local escaped_vless_decryption=""
+
   if [[ -n $CUSTOM_UUID ]]; then
     UUID="$CUSTOM_UUID"
   else
-    UUID=$( /opt/shadowlink/xray-core/xray uuid )
+    UUID=$(/opt/shadowlink/xray-core/xray uuid)
   fi
 
-  sed -i "s/\"uuid\"/\"$UUID\"/g" "$TUNNEL_JSON"
-  sed -i "s/\"uuid\"/\"$UUID\"/g" "$XUI_JSON"
+  generate_vless_encryption_keys
 
+  escaped_uuid=$(escape_sed_replacement "$UUID")
+  escaped_vless_decryption=$(escape_sed_replacement "$VLESS_DECRYPTION")
+
+  sed -i "s|\"reverse_tunnel_uuid\"|\"$escaped_uuid\"|g" "$TUNNEL_JSON"
+  sed -i "s|\"reverse_tunnel_uuid\"|\"$escaped_uuid\"|g" "$XUI_JSON"
+  sed -i "s|\"reverse_tunnel_decryption\"|\"$escaped_vless_decryption\"|" "$TUNNEL_JSON"
+}
+
+print_client_credentials() {
+  echo "Please save these reverse tunnel credentials and pass them to the client (PC with the ${GOLD}STARLINK${NC}):"
+  echo
+  echo "${RED}UUID${NC}= ${GREEN}$UUID${NC}"
+  echo "${RED}VLESS Auth${NC}= ${GREEN}X25519 (not Post-Quantum)${NC}"
+  echo "${RED}VLESS Encryption${NC}= ${GREEN}$VLESS_ENCRYPTION${NC}"
+  echo
 }
 
 parse_args "$@"
@@ -328,13 +381,10 @@ while true; do
 			echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
 			echo "${GREEN}Username${NC}: shadowlink"
 			echo "${GREEN}Password${NC}: shadowlink021"
-			echo 
-			echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
-            		echo 
-			echo "Please save the ${RED}UUID${NC} and pass it to the client (PC with the ${GOLD}STARLINK${NC}):"
-   			echo
-			echo "${RED}UUID${NC}= ${GREEN}$UUID${NC}"
-			echo
+				echo 
+				echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
+	            		echo
+				print_client_credentials
             break
             ;;
         2)
@@ -376,14 +426,11 @@ while true; do
 					echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
 					echo "${GREEN}Username${NC}: shadowlink"
 					echo "${GREEN}Password${NC}: shadowlink021"
-					echo 
-					echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
-					echo 
-					echo "Please save the ${RED}UUID${NC} and pass it to the client (PC with the ${GOLD}STARLINK${NC}):"
-     					echo
-					echo "${RED}UUID${NC}= ${GREEN}$UUID${NC}"
-					echo
-					break
+						echo 
+						echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
+						echo 
+						print_client_credentials
+						break
 				else
 					echo
 					echo "${GREEN}Aborted!${NC} ${RED}Shadowlink${NC} has not been removed."
