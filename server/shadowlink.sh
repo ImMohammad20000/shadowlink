@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
 GREEN=$(tput setaf 2)
 RED=$(tput setaf 1)
 BLUE=$(tput setaf 4)
@@ -13,6 +15,7 @@ XUI_JSON="/opt/shadowlink/3x-ui.json"
 SQLITE_BIN="/opt/shadowlink/sqlite3/sqlite3"
 TUNNEL_JSON="/opt/shadowlink/xray-core/tunnel_server.json"
 IPV4=""
+release=""
 
 print_usage() {
   echo "Usage: $0 [--uuid <uuid>]"
@@ -63,6 +66,91 @@ resolve_ipv4() {
   fi
 }
 
+detect_xui_arch() {
+  ARCH=$(uname -m)
+  case "${ARCH}" in
+    x86_64 | x64 | amd64) XUI_ARCH="amd64" ;;
+    i*86 | x86) XUI_ARCH="386" ;;
+    armv8* | armv8 | arm64 | aarch64) XUI_ARCH="arm64" ;;
+    armv7* | armv7) XUI_ARCH="armv7" ;;
+    armv6* | armv6) XUI_ARCH="armv6" ;;
+    armv5* | armv5) XUI_ARCH="armv5" ;;
+    s390x) XUI_ARCH="s390x" ;;
+    *) XUI_ARCH="amd64" ;;
+  esac
+}
+
+detect_release() {
+  if [[ -f /etc/os-release ]]; then
+    source /etc/os-release
+    release=$ID
+  elif [[ -f /usr/lib/os-release ]]; then
+    source /usr/lib/os-release
+    release=$ID
+  else
+    echo "Failed to detect OS"
+    exit 1
+  fi
+}
+
+download_xui_service_file() {
+  local url=$1
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "${RED}Service file not found in archive and curl is unavailable.${NC}"
+    exit 1
+  fi
+  curl -fLo /etc/systemd/system/x-ui.service "$url"
+}
+
+install_xui() {
+  local xui_asset=""
+
+  detect_xui_arch
+  detect_release
+
+  case "$XUI_ARCH" in
+    amd64) xui_asset="$SCRIPT_DIR/assets/3x-ui-amd64.tar.gz" ;;
+    arm64) xui_asset="$SCRIPT_DIR/assets/3x-ui-arm64.tar.gz" ;;
+    *)
+      echo "${RED}No bundled 3x-ui asset is available for architecture: ${XUI_ARCH}${NC}"
+      exit 1
+      ;;
+  esac
+
+  cd /root/ || exit 1
+  rm -rf x-ui/ /usr/local/x-ui/ /usr/bin/x-ui
+  tar -xzf "$xui_asset"
+  chmod +x x-ui/x-ui x-ui/bin/xray-linux-* x-ui/x-ui.sh
+  cp x-ui/x-ui.sh /usr/bin/x-ui
+
+  if [ -f "x-ui/x-ui.service" ]; then
+    cp -f x-ui/x-ui.service /etc/systemd/system/
+  elif [[ "$release" == "ubuntu" || "$release" == "debian" || "$release" == "armbian" ]]; then
+    if [ -f "x-ui/x-ui.service.debian" ]; then
+      cp -f x-ui/x-ui.service.debian /etc/systemd/system/x-ui.service
+    else
+      echo "Service file not found in archive, downloading..."
+      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.debian"
+    fi
+  elif [[ "$release" == "arch" || "$release" == "archlinux" || "$release" == "manjaro" ]]; then
+    if [ -f "x-ui/x-ui.service.arch" ]; then
+      cp -f x-ui/x-ui.service.arch /etc/systemd/system/x-ui.service
+    else
+      echo "Service file not found in archive, downloading..."
+      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.arch"
+    fi
+  else
+    if [ -f "x-ui/x-ui.service.rhel" ]; then
+      cp -f x-ui/x-ui.service.rhel /etc/systemd/system/x-ui.service
+    else
+      echo "Service file not found in archive, downloading..."
+      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.rhel"
+    fi
+  fi
+
+  mv x-ui/ /usr/local/
+}
+
 check_root_user() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "This script must be run as ${RED}root!${NC}"
@@ -88,33 +176,27 @@ extract_files() {
 
     CPU_ARCH=$(uname -m)
     case $CPU_ARCH in
-        "x86_64")
-            tar -xzf assets/3x-ui-amd64.tar.gz -C /opt/shadowlink
-            tar -xzf assets/xray-core-amd64.tar.gz -C /opt/shadowlink
-            tar -xzf assets/sqlite3-amd64.tar.gz -C /opt/shadowlink
-			cp -f assets/x-ui.db.sample /etc/3x-ui/x-ui.db
-			cp -f assets/3x-ui.json.sample /opt/shadowlink/3x-ui.json
-			cp -f assets/tunnel_server.json.sample /opt/shadowlink/xray-core/tunnel_server.json
-			cp -f assets/shadowlink_service.sh /opt/shadowlink/shadowlink_service.sh
-			chmod -R +x /opt/shadowlink
-			
+        "x86_64" | "amd64" | "x64")
+            tar -xzf "$SCRIPT_DIR/assets/xray-core-amd64.tar.gz" -C /opt/shadowlink
+            tar -xzf "$SCRIPT_DIR/assets/sqlite3-amd64.tar.gz" -C /opt/shadowlink
             ;;
-        "aarch64")
-			tar -xzf assets/3x-ui-arm64.tar.gz -C /opt/shadowlink
-            tar -xzf assets/xray-core-arm64.tar.gz -C /opt/shadowlink
-            tar -xzf assets/sqlite3-arm64.tar.gz -C /opt/shadowlink
-			cp -f assets/x-ui.db.sample /etc/3x-ui/x-ui.db
-			cp -f assets/3x-ui.json.sample /opt/shadowlink/3x-ui.json
-			cp -f assets/tunnel_server.json.sample /opt/shadowlink/xray-core/tunnel_server.json
-			cp -f assets/shadowlink_service.sh /opt/shadowlink/shadowlink_service.sh
-			chmod -R +x /opt/shadowlink
-			
+        "aarch64" | "arm64")
+            tar -xzf "$SCRIPT_DIR/assets/xray-core-arm64.tar.gz" -C /opt/shadowlink
+            tar -xzf "$SCRIPT_DIR/assets/sqlite3-arm64.tar.gz" -C /opt/shadowlink
             ;;
         *)
             echo "${RED}Unsupported CPU architecture: $CPU_ARCH${NC}"
             exit 1
             ;;
     esac
+
+	cp -f "$SCRIPT_DIR/assets/x-ui.db.sample" /etc/3x-ui/x-ui.db
+	cp -f "$SCRIPT_DIR/assets/3x-ui.json.sample" /opt/shadowlink/3x-ui.json
+	cp -f "$SCRIPT_DIR/assets/tunnel_server.json.sample" /opt/shadowlink/xray-core/tunnel_server.json
+	cp -f "$SCRIPT_DIR/assets/shadowlink_service.sh" /opt/shadowlink/shadowlink_service.sh
+	chmod -R +x /opt/shadowlink
+
+    install_xui
 }
 
 db_update() {
@@ -137,7 +219,7 @@ db_update() {
 shadowlink_service() {
     cat <<EOL > /etc/systemd/system/shadowlink.service
 [Unit]
-Description=Shadowlink Service (3x-ui + Xray-Core)
+Description=Shadowlink Service (Xray-Core Tunnel)
 After=network.target
 
 [Service]
@@ -158,16 +240,22 @@ EOL
     systemctl daemon-reload || { echo "${RED}Failed to reload systemd daemon!${NC}"; exit 1; }
 
     systemctl enable shadowlink.service || { echo "${RED}Failed to enable shadowlink service!${NC}"; exit 1; }
+    systemctl enable x-ui || { echo "${RED}Failed to enable x-ui service!${NC}"; exit 1; }
 }
 
 shadowlink_remover() {
-    systemctl stop shadowlink.service
-    systemctl disable shadowlink.service
-    rm /etc/systemd/system/shadowlink.service
+    systemctl stop shadowlink.service 2>/dev/null || true
+    systemctl disable shadowlink.service 2>/dev/null || true
+    systemctl stop x-ui 2>/dev/null || true
+    systemctl disable x-ui 2>/dev/null || true
+    rm -f /etc/systemd/system/shadowlink.service
+    rm -f /etc/systemd/system/x-ui.service
     systemctl daemon-reload
-    rm -r /opt/shadowlink
-    rm -r /etc/3x-ui
-
+    rm -rf /opt/shadowlink
+    rm -rf /etc/3x-ui
+    rm -rf /usr/local/x-ui
+    rm -f /usr/bin/x-ui
+    rm -rf /root/x-ui
 }
 uuid_setup() {
   if [[ -n $CUSTOM_UUID ]]; then
@@ -228,6 +316,9 @@ while true; do
 			echo "Creating new systemd service..."
 			shadowlink_service
 			echo "${GREEN}DONE!${NC}"
+			echo "Starting ${RED}x-ui${NC}..."
+			systemctl restart x-ui
+			echo "${GREEN}DONE!${NC}"
 			echo "Starting ${RED}Shadowlink${NC}..."
 			systemctl restart shadowlink.service
 			echo "${GREEN}DONE!${NC}"
@@ -272,6 +363,9 @@ while true; do
 					echo "${GREEN}DONE!${NC}"
 					echo "Creating new systemd service..."
 					shadowlink_service
+					echo "${GREEN}DONE!${NC}"
+					echo "Starting ${RED}x-ui${NC}..."
+					systemctl restart x-ui
 					echo "${GREEN}DONE!${NC}"
 					echo "Starting ${RED}Shadowlink${NC}..."
 					systemctl restart shadowlink.service

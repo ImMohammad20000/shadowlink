@@ -35,7 +35,11 @@ USDT-TRC20: ```TWDeGmxKC78vz5QqknSaxvevTfGEDDsABN```
 
 ```shadowlink.service```
 
-این سرویس مسئول اجرا تانل Xray-Core همینطور اجرا پنل 3x-ui هستش
+این سرویس فقط مسئول اجرا تانل Xray-Core هستش
+
+```x-ui.service```
+
+این سرویس مسئول اجرا پنل 3x-ui هستش
 
 ### مسیر کانفیگ و دیتابیس سرور
 
