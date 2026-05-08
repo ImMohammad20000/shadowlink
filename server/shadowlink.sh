@@ -7,11 +7,61 @@ GOLD=$(tput setaf 3)
 NC=$(tput sgr0)
 
 UUID=""
+CUSTOM_UUID=""
 XUI_DB="/etc/3x-ui/x-ui.db"
 XUI_JSON="/opt/shadowlink/3x-ui.json"
 SQLITE_BIN="/opt/shadowlink/sqlite3/sqlite3"
 TUNNEL_JSON="/opt/shadowlink/xray-core/tunnel_server.json"
-IPV4=$(hostname -I | awk '{print $1}')
+IPV4=""
+
+print_usage() {
+  echo "Usage: $0 [--uuid <uuid>]"
+}
+
+validate_uuid() {
+  if [[ ! $1 =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    echo "${RED}Invalid UUID format:${NC} $1"
+    print_usage
+    exit 1
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --uuid)
+        if [[ $# -lt 2 ]]; then
+          echo "${RED}Missing value for --uuid${NC}"
+          print_usage
+          exit 1
+        fi
+        CUSTOM_UUID="$2"
+        validate_uuid "$CUSTOM_UUID"
+        shift 2
+        ;;
+      --uuid=*)
+        CUSTOM_UUID="${1#*=}"
+        validate_uuid "$CUSTOM_UUID"
+        shift
+        ;;
+      -h|--help)
+        print_usage
+        exit 0
+        ;;
+      *)
+        echo "${RED}Unknown option:${NC} $1"
+        print_usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
+resolve_ipv4() {
+  if [[ -z $IPV4 ]]; then
+    IPV4=$(hostname -I | awk '{print $1}')
+  fi
+}
 
 check_root_user() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -120,13 +170,18 @@ shadowlink_remover() {
 
 }
 uuid_setup() {
-  UUID=$( /opt/shadowlink/xray-core/xray uuid )
+  if [[ -n $CUSTOM_UUID ]]; then
+    UUID="$CUSTOM_UUID"
+  else
+    UUID=$( /opt/shadowlink/xray-core/xray uuid )
+  fi
 
   sed -i "s/\"uuid\"/\"$UUID\"/g" "$TUNNEL_JSON"
   sed -i "s/\"uuid\"/\"$UUID\"/g" "$XUI_JSON"
 
 }
 
+parse_args "$@"
 check_root_user
 clear
 echo
@@ -160,10 +215,14 @@ while true; do
 			echo "Extracting Assets..."
             extract_files
 			echo "${GREEN}DONE!${NC}"
-			echo "Generating new UUID..."
+			if [[ -n $CUSTOM_UUID ]]; then
+				echo "Using custom UUID..."
+			else
+				echo "Generating new UUID..."
+			fi
 			uuid_setup
 			echo "${GREEN}DONE!${NC}"
-			echo "Updating DB file with the new UUID..."
+			echo "Updating DB file with the UUID..."
 			db_update
 			echo "${GREEN}DONE!${NC}"
 			echo "Creating new systemd service..."
@@ -172,6 +231,7 @@ while true; do
 			echo "Starting ${RED}Shadowlink${NC}..."
 			systemctl restart shadowlink.service
 			echo "${GREEN}DONE!${NC}"
+			resolve_ipv4
 			echo
 			echo "${GOLD}Panel Info${NC}:"
 			echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
@@ -200,10 +260,14 @@ while true; do
 					echo "Extracting Assets..."
 					extract_files
 					echo "${GREEN}DONE!${NC}"
-					echo "Generating new UUID..."
+					if [[ -n $CUSTOM_UUID ]]; then
+						echo "Using custom UUID..."
+					else
+						echo "Generating new UUID..."
+					fi
 					uuid_setup
 					echo "${GREEN}DONE!${NC}"
-					echo "Updating DB file with the new UUID..."
+					echo "Updating DB file with the UUID..."
 					db_update
 					echo "${GREEN}DONE!${NC}"
 					echo "Creating new systemd service..."
@@ -212,6 +276,7 @@ while true; do
 					echo "Starting ${RED}Shadowlink${NC}..."
 					systemctl restart shadowlink.service
 					echo "${GREEN}DONE!${NC}"
+					resolve_ipv4
 					echo
 					echo "${GOLD}Panel Info${NC}:"
 					echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
