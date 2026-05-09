@@ -252,12 +252,12 @@ jobs:
 
                   # Drop in the freshly built tarballs alongside the existing
                   # samples (3x-ui.json.sample, tunnel_server.json.sample, etc.).
-                  cp build/3x-ui-amd64.tar.gz       staging/server/assets/
-                  cp build/3x-ui-arm64.tar.gz       staging/server/assets/
-                  cp build/sqlite3-amd64.tar.gz     staging/server/assets/
-                  cp build/sqlite3-arm64.tar.gz     staging/server/assets/
-                  cp build/xray-core-amd64.tar.gz   staging/server/assets/
-                  cp build/xray-core-arm64.tar.gz   staging/server/assets/
+                  cp build/downloads/3x-ui-amd64.tar.gz   staging/server/assets/
+                  cp build/downloads/3x-ui-arm64.tar.gz   staging/server/assets/
+                  cp build/sqlite3-amd64.tar.gz           staging/server/assets/
+                  cp build/sqlite3-arm64.tar.gz           staging/server/assets/
+                  cp build/xray-core-amd64.tar.gz         staging/server/assets/
+                  cp build/xray-core-arm64.tar.gz         staging/server/assets/
 
                   ( cd staging && zip -qr "../dist/shadowlink-server.zip" server )
 
