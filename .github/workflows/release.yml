@@ -1,0 +1,378 @@
+name: Build and Publish Release Assets
+
+on:
+    release:
+        types: [published]
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        name: Build server & client bundles
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install build dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                    curl jq unzip zip tar ca-certificates \
+                    gcc gcc-aarch64-linux-gnu
+
+            - name: Prepare working directories
+              run: |
+                  set -euo pipefail
+                  rm -rf build dist staging
+                  mkdir -p build/downloads
+                  mkdir -p staging/server staging/client
+                  mkdir -p dist
+
+            # ---------------------------------------------------------------
+            # Resolve latest upstream versions
+            # ---------------------------------------------------------------
+            - name: Resolve latest upstream versions
+              id: versions
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  set -euo pipefail
+
+                  # Pick the latest *stable* tag: not a draft, not a prerelease.
+                  # /releases/latest already filters those out, but we double-check
+                  # by also scanning /releases and selecting the first entry where
+                  # both `draft` and `prerelease` are false.
+                  gh_latest_stable_tag() {
+                    local repo=$1
+                    local tag
+
+                    tag=$(curl -fsSL \
+                      -H "Accept: application/vnd.github+json" \
+                      -H "Authorization: Bearer ${GH_TOKEN}" \
+                      "https://api.github.com/repos/${repo}/releases?per_page=50" \
+                      | jq -r '[.[] | select(.draft==false and .prerelease==false)]
+                               | sort_by(.published_at) | reverse | .[0].tag_name // empty')
+
+                    if [[ -z $tag || $tag == "null" ]]; then
+                      # Fallback to /releases/latest if the listing returned nothing.
+                      tag=$(curl -fsSL \
+                        -H "Accept: application/vnd.github+json" \
+                        -H "Authorization: Bearer ${GH_TOKEN}" \
+                        "https://api.github.com/repos/${repo}/releases/latest" \
+                        | jq -r '.tag_name')
+                    fi
+
+                    if [[ -z $tag || $tag == "null" ]]; then
+                      echo "Failed to resolve latest stable tag for ${repo}" >&2
+                      return 1
+                    fi
+                    printf '%s' "$tag"
+                  }
+
+                  XRAY_TAG=$(gh_latest_stable_tag "XTLS/Xray-core")
+                  XUI_TAG=$(gh_latest_stable_tag "MHSanaei/3x-ui")
+                  IRAN_RULES_TAG=$(gh_latest_stable_tag "Chocolate4U/Iran-v2ray-rules")
+
+                  # SQLite version: parse download.html. The page contains a CSV-like
+                  # block (within HTML comments) listing all download files, e.g.:
+                  #   PRODUCT,relative-path,size,sha3
+                  # We extract the latest sqlite-tools-linux-x64-*.zip and the
+                  # matching sqlite-amalgamation-*.zip entries. The numeric suffix
+                  # in the filename (e.g. 3460100) sorts correctly for stable
+                  # releases; sqlite.org does not publish pre-release builds with
+                  # this naming pattern (those are named *-snapshot-*.zip and are
+                  # filtered out by the strict regex below).
+                  SQLITE_PAGE=$(curl -fsSL https://sqlite.org/download.html)
+                  SQLITE_TOOLS_REL=$(printf '%s\n' "$SQLITE_PAGE" \
+                    | grep -oE '20[0-9]{2}/sqlite-tools-linux-x64-[0-9]+\.zip' \
+                    | sort -u | sort -t- -k5 -n | tail -n1)
+                  SQLITE_AMALG_REL=$(printf '%s\n' "$SQLITE_PAGE" \
+                    | grep -oE '20[0-9]{2}/sqlite-amalgamation-[0-9]+\.zip' \
+                    | sort -u | sort -t- -k3 -n | tail -n1)
+
+                  if [[ -z $SQLITE_TOOLS_REL || -z $SQLITE_AMALG_REL ]]; then
+                    echo "Failed to resolve SQLite download URLs" >&2
+                    exit 1
+                  fi
+
+                  # Convert the embedded version number (e.g. 3460100) into the
+                  # human-readable form (3.46.1) used in release notes.
+                  SQLITE_RAW=$(printf '%s' "$SQLITE_TOOLS_REL" \
+                    | grep -oE '[0-9]+' | tail -n1)
+                  SQLITE_MAJOR=$(( 10#${SQLITE_RAW:0:1} ))
+                  SQLITE_MINOR=$(( 10#${SQLITE_RAW:1:2} ))
+                  SQLITE_PATCH=$(( 10#${SQLITE_RAW:3:2} ))
+                  SQLITE_BUILD=$(( 10#${SQLITE_RAW:5:2} ))
+                  if [[ $SQLITE_BUILD -eq 0 ]]; then
+                    SQLITE_VERSION="${SQLITE_MAJOR}.${SQLITE_MINOR}.${SQLITE_PATCH}"
+                  else
+                    SQLITE_VERSION="${SQLITE_MAJOR}.${SQLITE_MINOR}.${SQLITE_PATCH}.${SQLITE_BUILD}"
+                  fi
+
+                  {
+                    echo "xray_tag=$XRAY_TAG"
+                    echo "xui_tag=$XUI_TAG"
+                    echo "iran_rules_tag=$IRAN_RULES_TAG"
+                    echo "sqlite_tools_url=https://sqlite.org/$SQLITE_TOOLS_REL"
+                    echo "sqlite_amalg_url=https://sqlite.org/$SQLITE_AMALG_REL"
+                    echo "sqlite_version=$SQLITE_VERSION"
+                  } >> "$GITHUB_OUTPUT"
+
+                  echo "Xray-core:        $XRAY_TAG"
+                  echo "3x-ui:            $XUI_TAG"
+                  echo "Iran-v2ray-rules: $IRAN_RULES_TAG"
+                  echo "SQLite version:   $SQLITE_VERSION"
+                  echo "SQLite tools:     https://sqlite.org/$SQLITE_TOOLS_REL"
+                  echo "SQLite amalg:     https://sqlite.org/$SQLITE_AMALG_REL"
+
+            # ---------------------------------------------------------------
+            # Download upstream assets
+            # ---------------------------------------------------------------
+            - name: Download Xray-core releases
+              env:
+                  XRAY_TAG: ${{ steps.versions.outputs.xray_tag }}
+              run: |
+                  set -euo pipefail
+                  cd build/downloads
+                  base="https://github.com/XTLS/Xray-core/releases/download/${XRAY_TAG}"
+                  curl -fL -o xray-windows-64.zip       "${base}/Xray-windows-64.zip"
+                  curl -fL -o xray-linux-amd64.zip      "${base}/Xray-linux-64.zip"
+                  curl -fL -o xray-linux-arm64.zip      "${base}/Xray-linux-arm64-v8a.zip"
+
+            - name: Download 3x-ui releases
+              env:
+                  XUI_TAG: ${{ steps.versions.outputs.xui_tag }}
+              run: |
+                  set -euo pipefail
+                  cd build/downloads
+                  base="https://github.com/MHSanaei/3x-ui/releases/download/${XUI_TAG}"
+                  curl -fL -o 3x-ui-amd64.tar.gz "${base}/x-ui-linux-amd64.tar.gz"
+                  curl -fL -o 3x-ui-arm64.tar.gz "${base}/x-ui-linux-arm64.tar.gz"
+
+            - name: Download Iran-v2ray-rules
+              env:
+                  IRAN_RULES_TAG: ${{ steps.versions.outputs.iran_rules_tag }}
+              run: |
+                  set -euo pipefail
+                  cd build/downloads
+                  base="https://github.com/Chocolate4U/Iran-v2ray-rules/releases/download/${IRAN_RULES_TAG}"
+                  curl -fL -o iran-geoip.dat   "${base}/geoip.dat"
+                  curl -fL -o iran-geosite.dat "${base}/geosite.dat"
+
+            - name: Download SQLite (amd64 prebuilt + amalgamation source)
+              env:
+                  SQLITE_TOOLS_URL: ${{ steps.versions.outputs.sqlite_tools_url }}
+                  SQLITE_AMALG_URL: ${{ steps.versions.outputs.sqlite_amalg_url }}
+              run: |
+                  set -euo pipefail
+                  cd build/downloads
+                  curl -fL -o sqlite-tools-linux-x64.zip "$SQLITE_TOOLS_URL"
+                  curl -fL -o sqlite-amalgamation.zip    "$SQLITE_AMALG_URL"
+
+            # ---------------------------------------------------------------
+            # Build sqlite3 binaries (amd64 from prebuilt, arm64 cross-compiled)
+            # ---------------------------------------------------------------
+            - name: Stage sqlite3 amd64 (from prebuilt)
+              run: |
+                  set -euo pipefail
+                  cd build
+                  mkdir -p sqlite3-amd64/sqlite3
+                  unzip -q downloads/sqlite-tools-linux-x64.zip -d sqlite-tools-extracted
+                  # Locate the sqlite3 binary in whatever path it ships in
+                  sqlite_bin=$(find sqlite-tools-extracted -type f -name 'sqlite3' | head -n1)
+                  if [[ -z $sqlite_bin ]]; then
+                    echo "sqlite3 binary not found in prebuilt archive" >&2
+                    exit 1
+                  fi
+                  cp "$sqlite_bin" sqlite3-amd64/sqlite3/sqlite3
+                  chmod +x sqlite3-amd64/sqlite3/sqlite3
+                  tar -czf sqlite3-amd64.tar.gz -C sqlite3-amd64 sqlite3
+
+            - name: Cross-compile sqlite3 arm64 (from amalgamation)
+              run: |
+                  set -euo pipefail
+                  cd build
+                  mkdir -p sqlite-amalg
+                  unzip -q downloads/sqlite-amalgamation.zip -d sqlite-amalg
+                  src_dir=$(find sqlite-amalg -maxdepth 2 -type d -name 'sqlite-amalgamation-*' | head -n1)
+                  if [[ -z $src_dir ]]; then
+                    echo "sqlite amalgamation directory not found" >&2
+                    exit 1
+                  fi
+                  mkdir -p sqlite3-arm64/sqlite3
+                  aarch64-linux-gnu-gcc \
+                    -O2 -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_FTS5 \
+                    -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE \
+                    "$src_dir/shell.c" "$src_dir/sqlite3.c" \
+                    -o sqlite3-arm64/sqlite3/sqlite3 \
+                    -lpthread -ldl -lm -static
+                  aarch64-linux-gnu-strip sqlite3-arm64/sqlite3/sqlite3 || true
+                  chmod +x sqlite3-arm64/sqlite3/sqlite3
+                  tar -czf sqlite3-arm64.tar.gz -C sqlite3-arm64 sqlite3
+
+            # ---------------------------------------------------------------
+            # Build xray-core server tarballs (binary + bundled geo files)
+            # ---------------------------------------------------------------
+            - name: Build xray-core server tarballs
+              run: |
+                  set -euo pipefail
+                  cd build
+
+                  for arch in amd64 arm64; do
+                    workdir="xray-${arch}-extracted"
+                    outdir="xray-core-${arch}/xray-core"
+                    rm -rf "$workdir" "xray-core-${arch}"
+                    mkdir -p "$workdir" "$outdir"
+
+                    unzip -q "downloads/xray-linux-${arch}.zip" -d "$workdir"
+
+                    cp "$workdir/xray"          "$outdir/xray"
+                    cp "$workdir/geoip.dat"     "$outdir/geoip.dat"
+                    cp "$workdir/geosite.dat"   "$outdir/geosite.dat"
+                    chmod +x "$outdir/xray"
+
+                    tar -czf "xray-core-${arch}.tar.gz" -C "xray-core-${arch}" xray-core
+                  done
+
+            # ---------------------------------------------------------------
+            # Assemble server bundle
+            # ---------------------------------------------------------------
+            - name: Assemble server bundle
+              run: |
+                  set -euo pipefail
+
+                  # Start from the repository's server/ directory so all scripts
+                  # and sample configs are included.
+                  cp -a server/. staging/server/
+                  mkdir -p staging/server/assets
+
+                  # Drop in the freshly built tarballs alongside the existing
+                  # samples (3x-ui.json.sample, tunnel_server.json.sample, etc.).
+                  cp build/3x-ui-amd64.tar.gz       staging/server/assets/
+                  cp build/3x-ui-arm64.tar.gz       staging/server/assets/
+                  cp build/sqlite3-amd64.tar.gz     staging/server/assets/
+                  cp build/sqlite3-arm64.tar.gz     staging/server/assets/
+                  cp build/xray-core-amd64.tar.gz   staging/server/assets/
+                  cp build/xray-core-arm64.tar.gz   staging/server/assets/
+
+                  ( cd staging && zip -qr "../dist/shadowlink-server.zip" server )
+
+            # ---------------------------------------------------------------
+            # Assemble client bundle
+            # ---------------------------------------------------------------
+            - name: Assemble client bundle
+              run: |
+                  set -euo pipefail
+
+                  cp -a client/. staging/client/
+
+                  # Windows xray binary + wintun.dll (bundled in upstream zip)
+                  rm -rf build/xray-windows-extracted
+                  mkdir -p build/xray-windows-extracted
+                  unzip -q build/downloads/xray-windows-64.zip -d build/xray-windows-extracted
+
+                  win_xray=$(find build/xray-windows-extracted -type f -name 'xray.exe' | head -n1)
+                  win_wintun=$(find build/xray-windows-extracted -type f -name 'wintun.dll' | head -n1)
+                  if [[ -z $win_xray || -z $win_wintun ]]; then
+                    echo "xray.exe or wintun.dll missing from upstream Windows zip" >&2
+                    exit 1
+                  fi
+                  cp "$win_xray"   staging/client/xray.exe
+                  cp "$win_wintun" staging/client/wintun.dll
+
+                  # Iran-v2ray-rules geo files for the client side
+                  cp build/downloads/iran-geoip.dat   staging/client/geoip.dat
+                  cp build/downloads/iran-geosite.dat staging/client/geosite.dat
+
+                  # Linux xray binaries under client/linux/{amd64,arm64}/xray
+                  mkdir -p staging/client/linux/amd64 staging/client/linux/arm64
+                  for arch in amd64 arm64; do
+                    workdir="build/xray-linux-${arch}-extracted"
+                    rm -rf "$workdir"
+                    mkdir -p "$workdir"
+                    unzip -q "build/downloads/xray-linux-${arch}.zip" -d "$workdir"
+                    cp "$workdir/xray" "staging/client/linux/${arch}/xray"
+                    chmod +x "staging/client/linux/${arch}/xray"
+                  done
+
+                  ( cd staging && zip -qr "../dist/shadowlink-client.zip" client )
+
+            - name: Show built artifacts
+              run: |
+                  ls -la dist
+                  ( cd dist && sha256sum shadowlink-server.zip shadowlink-client.zip )
+
+            - name: Upload artifacts (workflow run)
+              uses: actions/upload-artifact@v4
+              with:
+                  name: shadowlink-release-bundles
+                  path: dist/*.zip
+                  if-no-files-found: error
+
+            # ---------------------------------------------------------------
+            # Upload to the GitHub Release that triggered this workflow
+            # ---------------------------------------------------------------
+            - name: Upload assets to release
+              if: github.event_name == 'release'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_TAG: ${{ github.event.release.tag_name }}
+              run: |
+                  set -euo pipefail
+                  gh release upload "$RELEASE_TAG" \
+                    dist/shadowlink-server.zip \
+                    dist/shadowlink-client.zip \
+                    --clobber \
+                    --repo "${{ github.repository }}"
+
+            # ---------------------------------------------------------------
+            # Append bundled component versions to the release notes
+            # ---------------------------------------------------------------
+            - name: Update release notes with bundled versions
+              if: github.event_name == 'release'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_TAG: ${{ github.event.release.tag_name }}
+                  XRAY_TAG: ${{ steps.versions.outputs.xray_tag }}
+                  XUI_TAG: ${{ steps.versions.outputs.xui_tag }}
+                  IRAN_RULES_TAG: ${{ steps.versions.outputs.iran_rules_tag }}
+                  SQLITE_VERSION: ${{ steps.versions.outputs.sqlite_version }}
+                  SQLITE_TOOLS_URL: ${{ steps.versions.outputs.sqlite_tools_url }}
+                  SQLITE_AMALG_URL: ${{ steps.versions.outputs.sqlite_amalg_url }}
+              run: |
+                  set -euo pipefail
+
+                  current_body=$(gh release view "$RELEASE_TAG" \
+                    --repo "${{ github.repository }}" \
+                    --json body --jq '.body' || echo "")
+
+                  marker="<!-- bundled-versions -->"
+
+                  versions_block=$(cat <<EOF
+                  $marker
+                  ## Bundled component versions
+
+                  | Component | Version | Source |
+                  | --- | --- | --- |
+                  | Xray-core | \`$XRAY_TAG\` | https://github.com/XTLS/Xray-core/releases/tag/$XRAY_TAG |
+                  | 3x-ui | \`$XUI_TAG\` | https://github.com/MHSanaei/3x-ui/releases/tag/$XUI_TAG |
+                  | Iran-v2ray-rules | \`$IRAN_RULES_TAG\` | https://github.com/Chocolate4U/Iran-v2ray-rules/releases/tag/$IRAN_RULES_TAG |
+                  | SQLite (amd64 prebuilt) | \`$SQLITE_VERSION\` | $SQLITE_TOOLS_URL |
+                  | SQLite (arm64 source) | \`$SQLITE_VERSION\` | $SQLITE_AMALG_URL |
+                  EOF
+                  )
+
+                  # Strip any previously-appended versions block so re-runs stay clean.
+                  trimmed_body=$(printf '%s' "$current_body" \
+                    | awk -v m="$marker" 'BEGIN{skip=0} { if ($0==m) skip=1; if (!skip) print }')
+
+                  new_body="${trimmed_body%$'\n'}"$'\n\n'"$versions_block"
+
+                  printf '%s' "$new_body" > release-notes.md
+                  gh release edit "$RELEASE_TAG" \
+                    --repo "${{ github.repository }}" \
+                    --notes-file release-notes.md
