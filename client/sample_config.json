@@ -115,13 +115,6 @@
           "bittorrent"
         ],
         "type": "field"
-      },
-      {
-        "inboundTag": [
-          "r-reverse"
-        ],
-        "outboundTag": "starlink",
-        "type": "field"
       }
     ]
   },

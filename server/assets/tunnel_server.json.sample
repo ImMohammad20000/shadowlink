@@ -127,7 +127,12 @@
       "settings": {
         "domainStrategy": "AsIs",
         "noises": [],
-        "redirect": ""
+        "redirect": "",
+         "finalRules": [
+            {
+              "action": "allow",
+            }
+         ]
       },
       "tag": "direct"
     },
