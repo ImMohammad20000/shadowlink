@@ -13,12 +13,14 @@ CUSTOM_UUID=""
 VLESS_AUTHENTICATION_LABEL="Authentication: X25519, not Post-Quantum"
 VLESS_DECRYPTION=""
 VLESS_ENCRYPTION=""
-XUI_DB="/etc/3x-ui/x-ui.db"
+XUI_DB="/etc/x-ui/x-ui.db"
 XUI_JSON="/opt/shadowlink/3x-ui.json"
 SQLITE_BIN="/opt/shadowlink/sqlite3/sqlite3"
 TUNNEL_JSON="/opt/shadowlink/xray-core/tunnel_server.json"
 IPV4=""
 release=""
+PANEL_USERNAME="shadowlink"
+PANEL_PASSWORD=""
 
 print_usage() {
   echo "Usage: $0 [--uuid <uuid>]"
@@ -128,17 +130,10 @@ detect_release() {
   fi
 }
 
-download_xui_service_file() {
-  local url=$1
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "${RED}Service file not found in archive and curl is unavailable.${NC}"
-    exit 1
-  fi
-  curl -fLo /etc/systemd/system/x-ui.service "$url"
-}
-
 install_xui() {
   local xui_asset=""
+  local service_file=""
+  local xui_version=""
 
   detect_xui_arch
   detect_release
@@ -154,35 +149,37 @@ install_xui() {
 
   cd /root/ || exit 1
   rm -rf x-ui/ /usr/local/x-ui/ /usr/bin/x-ui
-  tar -xzf "$xui_asset"
-  chmod +x x-ui/x-ui x-ui/bin/xray-linux-* x-ui/x-ui.sh
-  cp x-ui/x-ui.sh /usr/bin/x-ui
+  tar -xzf "$xui_asset" || exit 1
+  [[ -s x-ui/x-ui ]] || { echo "${RED}3x-ui archive is missing its binary.${NC}"; exit 1; }
+  chmod +x x-ui/x-ui x-ui/bin/xray-linux-*
+  xui_version=$(x-ui/x-ui -v) || exit 1
+  [[ "$xui_version" =~ ^([3-9]|[1-9][0-9])\. ]] || {
+    echo "${RED}3x-ui v3 or newer is required (found $xui_version).${NC}"
+    exit 1
+  }
 
-  if [ -f "x-ui/x-ui.service" ]; then
-    cp -f x-ui/x-ui.service /etc/systemd/system/
-  elif [[ "$release" == "ubuntu" || "$release" == "debian" || "$release" == "armbian" ]]; then
-    if [ -f "x-ui/x-ui.service.debian" ]; then
-      cp -f x-ui/x-ui.service.debian /etc/systemd/system/x-ui.service
-    else
-      echo "Service file not found in archive, downloading..."
-      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.debian"
-    fi
+  if [[ "$release" == "ubuntu" || "$release" == "debian" || "$release" == "armbian" ]]; then
+    service_file="x-ui.service.debian"
   elif [[ "$release" == "arch" || "$release" == "archlinux" || "$release" == "manjaro" ]]; then
-    if [ -f "x-ui/x-ui.service.arch" ]; then
-      cp -f x-ui/x-ui.service.arch /etc/systemd/system/x-ui.service
-    else
-      echo "Service file not found in archive, downloading..."
-      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.arch"
-    fi
+    service_file="x-ui.service.arch"
   else
-    if [ -f "x-ui/x-ui.service.rhel" ]; then
-      cp -f x-ui/x-ui.service.rhel /etc/systemd/system/x-ui.service
-    else
-      echo "Service file not found in archive, downloading..."
-      download_xui_service_file "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/x-ui.service.rhel"
-    fi
+    service_file="x-ui.service.rhel"
   fi
 
+  if [[ -f "x-ui/$service_file" ]]; then
+    cp -f "x-ui/$service_file" /etc/systemd/system/x-ui.service
+  else
+    cp -f "$SCRIPT_DIR/assets/$service_file" /etc/systemd/system/x-ui.service || exit 1
+  fi
+  if [[ -f "$SCRIPT_DIR/assets/x-ui.sh" ]]; then
+    cp -f "$SCRIPT_DIR/assets/x-ui.sh" /usr/bin/x-ui || exit 1
+  elif [[ -f x-ui/x-ui.sh ]]; then
+    cp -f x-ui/x-ui.sh /usr/bin/x-ui || exit 1
+  else
+    echo "${RED}3x-ui management script is missing from the bundle.${NC}"
+    exit 1
+  fi
+  chmod +x /usr/bin/x-ui
   mv x-ui/ /usr/local/
 }
 
@@ -205,8 +202,8 @@ extract_files() {
         mkdir -p /opt/shadowlink || { echo -e "${RED}Failed to create /opt/shadowlink directory!${NC}"; exit 1; }
     fi
 
-    if [ ! -d "/etc/3x-ui" ]; then
-        mkdir -p /etc/3x-ui || { echo -e "${RED}Failed to create /etc/3x-ui directory!${NC}"; exit 1; }
+    if [ ! -d "/etc/x-ui" ]; then
+        mkdir -p -m 700 /etc/x-ui || { echo -e "${RED}Failed to create /etc/x-ui directory!${NC}"; exit 1; }
     fi
 
     CPU_ARCH=$(uname -m)
@@ -225,7 +222,6 @@ extract_files() {
             ;;
     esac
 
-	cp -f "$SCRIPT_DIR/assets/x-ui.db.sample" /etc/3x-ui/x-ui.db
 	cp -f "$SCRIPT_DIR/assets/3x-ui.json.sample" /opt/shadowlink/3x-ui.json
 	cp -f "$SCRIPT_DIR/assets/tunnel_server.json.sample" /opt/shadowlink/xray-core/tunnel_server.json
 	cp -f "$SCRIPT_DIR/assets/shadowlink_service.sh" /opt/shadowlink/shadowlink_service.sh
@@ -235,20 +231,22 @@ extract_files() {
 }
 
 db_update() {
-    
-    # Read the JSON file into a variable
-    JSON_CONTENT=$(cat "$XUI_JSON" | tr -d "'") # Remove single quotes to prevent SQL issues
+    # 3x-ui creates and migrates its own schema. Its template setting is still
+    # stored in SQLite; readfile preserves quotes and backslashes in the JSON.
+    "$SQLITE_BIN" -bail "$XUI_DB" "BEGIN;
+      UPDATE settings SET value=CAST(readfile('$XUI_JSON') AS TEXT) WHERE key='xrayTemplateConfig';
+      INSERT INTO settings (key, value)
+        SELECT 'xrayTemplateConfig', CAST(readfile('$XUI_JSON') AS TEXT)
+        WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key='xrayTemplateConfig');
+      COMMIT;" || exit 1
+}
 
-    # Check if xrayTemplateConfig exists
-    KEY_EXISTS=$($SQLITE_BIN "$XUI_DB" "SELECT COUNT(*) FROM settings WHERE key='xrayTemplateConfig';")
-
-    if [ "$KEY_EXISTS" -eq 0 ]; then
-        # Insert if it does not exist
-        $SQLITE_BIN "$XUI_DB" "INSERT INTO settings (key, value) VALUES ('xrayTemplateConfig', '$JSON_CONTENT');"
-    else
-        # Update if it exists
-        $SQLITE_BIN "$XUI_DB" "UPDATE settings SET value='$JSON_CONTENT' WHERE key='xrayTemplateConfig';"
-    fi
+configure_xui() {
+    PANEL_PASSWORD=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+    [[ ${#PANEL_PASSWORD} -eq 32 ]] || { echo "${RED}Failed to generate panel password.${NC}"; exit 1; }
+    # The v3 CLI initializes the current schema and hashes the password.
+    /usr/local/x-ui/x-ui setting -username "$PANEL_USERNAME" -password "$PANEL_PASSWORD" -port 7092 -webBasePath /shadowlink/ || exit 1
+    [[ -s "$XUI_DB" ]] || { echo "${RED}3x-ui did not create its database.${NC}"; exit 1; }
 }
 
 shadowlink_service() {
@@ -287,6 +285,7 @@ shadowlink_remover() {
     rm -f /etc/systemd/system/x-ui.service
     systemctl daemon-reload
     rm -rf /opt/shadowlink
+    rm -rf /etc/x-ui
     rm -rf /etc/3x-ui
     rm -rf /usr/local/x-ui
     rm -f /usr/bin/x-ui
@@ -352,6 +351,10 @@ while true; do
 				echo "${RED}Shadowlink${NC} is already installed on this system. You can choose Reset or Uninstall."
                 continue
             fi
+			if [[ -e "$XUI_DB" || -e /usr/local/x-ui ]]; then
+				echo "${RED}An existing 3x-ui installation was found. Back it up or use a separate server for Shadowlink.${NC}"
+				break
+			fi
 			echo
 			echo "Extracting Assets..."
             extract_files
@@ -363,7 +366,9 @@ while true; do
 			fi
 			uuid_setup
 			echo "${GREEN}DONE!${NC}"
-			echo "Updating DB file with the UUID..."
+			echo "Configuring 3x-ui..."
+			configure_xui
+			echo "Updating Xray template..."
 			db_update
 			echo "${GREEN}DONE!${NC}"
 			echo "Creating new systemd service..."
@@ -379,10 +384,10 @@ while true; do
 			echo
 			echo "${GOLD}Panel Info${NC}:"
 			echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
-			echo "${GREEN}Username${NC}: shadowlink"
-			echo "${GREEN}Password${NC}: shadowlink021"
+			echo "${GREEN}Username${NC}: $PANEL_USERNAME"
+			echo "${GREEN}Password${NC}: $PANEL_PASSWORD"
 				echo 
-				echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
+				echo "${GOLD}Save the generated panel password; it is shown only during setup.${NC}"
 	            		echo
 				print_client_credentials
             break
@@ -408,7 +413,9 @@ while true; do
 					fi
 					uuid_setup
 					echo "${GREEN}DONE!${NC}"
-					echo "Updating DB file with the UUID..."
+					echo "Configuring 3x-ui..."
+					configure_xui
+					echo "Updating Xray template..."
 					db_update
 					echo "${GREEN}DONE!${NC}"
 					echo "Creating new systemd service..."
@@ -424,10 +431,10 @@ while true; do
 					echo
 					echo "${GOLD}Panel Info${NC}:"
 					echo "${GREEN}Address${NC}: http://$IPV4:7092/shadowlink"
-					echo "${GREEN}Username${NC}: shadowlink"
-					echo "${GREEN}Password${NC}: shadowlink021"
+					echo "${GREEN}Username${NC}: $PANEL_USERNAME"
+					echo "${GREEN}Password${NC}: $PANEL_PASSWORD"
 						echo 
-						echo "${RED}Important Note: Please change the username, password, port, and web path for a safer approach${NC}" 
+						echo "${GOLD}Save the generated panel password; it is shown only during setup.${NC}"
 						echo 
 						print_client_credentials
 						break

@@ -49,22 +49,13 @@
       "protocol": "vless",
       "sendThrough": "iran_internet_ipv4",
       "settings": {
-        "vnext": [
-          {
-            "address": "bridge_server",
-            "port": 7091,
-            "users": [
-              {
-                "encryption": "encryption_key",
-                "flow": "",
-                "id": "uuid",
-                "reverse": {
-                  "tag": "r-reverse"
-                }
-              }
-            ]
-          }
-        ]
+        "address": "bridge_server",
+        "port": 7091,
+        "encryption": "encryption_key",
+        "id": "uuid",
+        "reverse": {
+          "tag": "r-reverse"
+        }
       },
       "streamSettings": {
         "network": "tcp",
@@ -100,6 +91,13 @@
           "api"
         ],
         "outboundTag": "api",
+        "type": "field"
+      },
+      {
+        "inboundTag": [
+          "r-reverse"
+        ],
+        "outboundTag": "starlink",
         "type": "field"
       },
       {

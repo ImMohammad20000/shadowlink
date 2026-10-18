@@ -30,7 +30,7 @@
         "strategy": "always"
       },
       "listen": "127.0.0.1",
-      "port": 7092,
+      "port": 7094,
       "protocol": "vless",
       "settings": {
         "clients": [
@@ -40,8 +40,7 @@
             "id": "reverse_tunnel_uuid"
           }
         ],
-        "decryption": "none",
-        "fallbacks": []
+        "decryption": "none"
       },
       "sniffing": {
         "destOverride": [
@@ -64,7 +63,7 @@
           }
         }
       },
-      "tag": "inbound-7092"
+      "tag": "inbound-7094"
     },
     {
       "allocate": {
@@ -86,8 +85,7 @@
             }
           }
         ],
-        "decryption": "reverse_tunnel_decryption",
-        "fallbacks": []
+        "decryption": "reverse_tunnel_decryption"
       },
       "sniffing": {
         "destOverride": [
@@ -130,7 +128,7 @@
         "redirect": "",
          "finalRules": [
             {
-              "action": "allow",
+              "action": "allow"
             }
          ]
       },
@@ -182,8 +180,8 @@
       },
        {
         "outboundTag": "r-reverse",
-        "type": "field"
-        "inboundTag": ["inbound-7091"],
+        "type": "field",
+        "inboundTag": ["inbound-7091"]
       }
   
     ]

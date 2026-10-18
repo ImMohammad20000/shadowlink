@@ -6,6 +6,8 @@
 
 ![App Screenshot](https://raw.githubusercontent.com/ImMohammad20000/shadowlink/main/pics/shadowlink.png)
 
+> **توجه:** این پروژه صرفاً با هدف آموزشی ارائه شده است.
+
 ## توضیح کوتاه
 
 این پروژه یک راه حل برای ارتباط با "استارلینک" در شرایط قطعی کامل اینترنت (حتی قطعی اینترنت دیتاسنتر ها) ارائه میده
@@ -21,20 +23,6 @@
 ### نسخه وب:
 
 https://github.com/ImMohammad20000/shadowlink/blob/main/setup.md
-
-### نسخه PDF:
-
-https://github.com/ImMohammad20000/shadowlink/blob/main/setup.pdf
-
-## کمک به پروژه
-
-BTC: `1D4fJB6ng9k8rNCwEVveXZLqrBTnEG1Zwn`
-
-ETH: `0x7d0152a91fe0f15b18c97ae24758162bf9b22cb1`
-
-TON: `UQDTdMkw3VuOjGASQFe2ZqklkvB_A3jcCVAaFjT5Vpzm-qsk`
-
-USDT-TRC20: `TWDeGmxKC78vz5QqknSaxvevTfGEDDsABN`
 
 ## نکات برای کاربران حرفه ای
 
@@ -52,11 +40,13 @@ USDT-TRC20: `TWDeGmxKC78vz5QqknSaxvevTfGEDDsABN`
 
 File & Configs: `/opt/shadowlink`
 
-Panel Database: `/etc/3x-ui/x-ui.db`
+Panel Database (3x-ui v3+): `/etc/x-ui/x-ui.db`
+
+نصب جدید از دیتابیس خالی خود 3x-ui استفاده می‌کند و رمز عبور تصادفی پنل را در پایان نصب نمایش می‌دهد. اطلاعات ورود را ذخیره کنید. برای نصب آفلاین از فایل `shadowlink-server.zip` نسخه Release استفاده کنید؛ کلون سورس به تنهایی باینری‌های لازم را ندارد.
 
 ### تنظیم پورت
 
-اتصال بین سرور و کلاینت بر روی پورت 7091 هستش که درصورت نیاز قابل تغییر هست. برای تغییر پورت میتونید تغییر دلخواه خودتون رو در فایل های `sample_config.json` برای کلاینت و `tunnel_server.json.sample` و `3x-ui.json.sample` برای سرور اعمال کنید. پورت پیشفرض پنل هم 7092 بوده که میتونید از تنظیمات پنل تغییر بدید
+اتصال بین سرور و کلاینت بر روی پورت 7091 هستش که درصورت نیاز قابل تغییر هست. برای تغییر پورت میتونید تغییر دلخواه خودتون رو در فایل های `sample_config.json` برای کلاینت و `tunnel_server.json.sample` برای سرور اعمال کنید. پورت داخلی ارتباط Xray سرور با پنل 7094 است و باید در `tunnel_server.json.sample` و `3x-ui.json.sample` یکسان بماند. پورت پیشفرض پنل 7092 است.
 
 ### تغییر نوع تانل
 
@@ -85,7 +75,7 @@ Panel Database: `/etc/3x-ui/x-ui.db`
 با ایجاد هر `Release` جدید روی این ریپو، یک GitHub Action (فایل `.github/workflows/release.yml`) به صورت خودکار:
 
 - آخرین نسخه `Xray-core` (Windows-64، Linux amd64 و arm64) رو از https://github.com/XTLS/Xray-core
-- آخرین نسخه `3x-ui` (Linux amd64 و arm64) رو از https://github.com/MHSanaei/3x-ui
+- آخرین نسخه پایدار `3x-ui` v3+ (Linux amd64 و arm64) و اسکریپت و سرویس‌های همان نسخه رو از https://github.com/MHSanaei/3x-ui
 - آخرین نسخه `SQLite` (amd64 از فایل آماده sqlite.org و arm64 با کامپایل از سورس amalgamation سایت sqlite.org)
 - آخرین نسخه `Iran-v2ray-rules` (`geoip.dat` و `geosite.dat`) رو از https://github.com/Chocolate4U/Iran-v2ray-rules
 
@@ -94,7 +84,7 @@ Panel Database: `/etc/3x-ui/x-ui.db`
 ساختار خروجی ها:
 
 - `shadowlink-server.zip` شامل کل فولدر `server/` به اضافه فایل های `assets/`:
-    - `3x-ui-amd64.tar.gz` و `3x-ui-arm64.tar.gz`
+    - `3x-ui-amd64.tar.gz` و `3x-ui-arm64.tar.gz` به همراه `x-ui.sh` و فایل‌های `x-ui.service.*`
     - `xray-core-amd64.tar.gz` و `xray-core-arm64.tar.gz` (شامل باینری `xray` و فایل های `geoip.dat`/`geosite.dat` بسته بندی شده با خود Xray-core در دایرکتوری `xray-core/`)
     - `sqlite3-amd64.tar.gz` و `sqlite3-arm64.tar.gz` (شامل باینری `sqlite3` در دایرکتوری `sqlite3/`)
 - `shadowlink-client.zip` شامل کل فولدر `client/` به اضافه:

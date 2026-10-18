@@ -75,6 +75,10 @@ jobs:
 
                   XRAY_TAG=$(gh_latest_stable_tag "XTLS/Xray-core")
                   XUI_TAG=$(gh_latest_stable_tag "MHSanaei/3x-ui")
+                  if [[ ! "$XUI_TAG" =~ ^v([3-9]|[1-9][0-9])\. ]]; then
+                    echo "3x-ui v3 or newer is required (found $XUI_TAG)" >&2
+                    exit 1
+                  fi
                   IRAN_RULES_TAG=$(gh_latest_stable_tag "Chocolate4U/Iran-v2ray-rules")
 
                   # SQLite version: parse download.html. The page contains a CSV-like
@@ -152,6 +156,17 @@ jobs:
                   base="https://github.com/MHSanaei/3x-ui/releases/download/${XUI_TAG}"
                   curl -fL -o 3x-ui-amd64.tar.gz "${base}/x-ui-linux-amd64.tar.gz"
                   curl -fL -o 3x-ui-arm64.tar.gz "${base}/x-ui-linux-arm64.tar.gz"
+                  for arch in amd64 arm64; do
+                    curl -fL -o "3x-ui-${arch}.tar.gz.sha256" "${base}/x-ui-linux-${arch}.tar.gz.sha256"
+                    expected=$(awk '{print $1}' "3x-ui-${arch}.tar.gz.sha256")
+                    actual=$(sha256sum "3x-ui-${arch}.tar.gz" | awk '{print $1}')
+                    [[ "$actual" == "$expected" ]] || { echo "3x-ui ${arch} checksum mismatch" >&2; exit 1; }
+                  done
+                  source="https://raw.githubusercontent.com/MHSanaei/3x-ui/${XUI_TAG}"
+                  curl -fL -o x-ui.sh "${source}/x-ui.sh"
+                  for distro in debian arch rhel; do
+                    curl -fL -o "x-ui.service.${distro}" "${source}/x-ui.service.${distro}"
+                  done
 
             - name: Download Iran-v2ray-rules
               env:
@@ -238,6 +253,12 @@ jobs:
                     tar -czf "xray-core-${arch}.tar.gz" -C "xray-core-${arch}" xray-core
                   done
 
+            - name: Validate 3x-ui and Xray configurations
+              run: |
+                  python3 tests/validate_configs.py \
+                    --panel-archive build/downloads/3x-ui-amd64.tar.gz \
+                    --xray-zip build/downloads/xray-linux-amd64.zip
+
             # ---------------------------------------------------------------
             # Assemble server bundle
             # ---------------------------------------------------------------
@@ -254,6 +275,8 @@ jobs:
                   # samples (3x-ui.json.sample, tunnel_server.json.sample, etc.).
                   cp build/downloads/3x-ui-amd64.tar.gz   staging/server/assets/
                   cp build/downloads/3x-ui-arm64.tar.gz   staging/server/assets/
+                  cp build/downloads/x-ui.sh              staging/server/assets/
+                  cp build/downloads/x-ui.service.*       staging/server/assets/
                   cp build/sqlite3-amd64.tar.gz           staging/server/assets/
                   cp build/sqlite3-arm64.tar.gz           staging/server/assets/
                   cp build/xray-core-amd64.tar.gz         staging/server/assets/
