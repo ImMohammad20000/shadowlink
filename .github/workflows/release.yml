@@ -42,23 +42,23 @@ jobs:
               run: |
                   set -euo pipefail
 
-                  # Pick the latest *stable* tag: not a draft, not a prerelease.
-                  # /releases/latest already filters those out, but we double-check
-                  # by also scanning /releases and selecting the first entry where
-                  # both `draft` and `prerelease` are false.
-                  gh_latest_stable_tag() {
+                  # Xray-core includes prereleases; other dependencies use stable
+                  # releases. Drafts are never eligible.
+                  gh_latest_release_tag() {
                     local repo=$1
+                    local include_prerelease=${2:-false}
                     local tag
 
                     tag=$(curl -fsSL \
                       -H "Accept: application/vnd.github+json" \
                       -H "Authorization: Bearer ${GH_TOKEN}" \
                       "https://api.github.com/repos/${repo}/releases?per_page=50" \
-                      | jq -r '[.[] | select(.draft==false and .prerelease==false)]
+                      | jq -r --argjson include_prerelease "$include_prerelease" \
+                              '[.[] | select(.draft==false and ($include_prerelease or .prerelease==false))]
                                | sort_by(.published_at) | reverse | .[0].tag_name // empty')
 
-                    if [[ -z $tag || $tag == "null" ]]; then
-                      # Fallback to /releases/latest if the listing returned nothing.
+                    if [[ $include_prerelease == false && ( -z $tag || $tag == "null" ) ]]; then
+                      # GitHub's /releases/latest endpoint only returns stable releases.
                       tag=$(curl -fsSL \
                         -H "Accept: application/vnd.github+json" \
                         -H "Authorization: Bearer ${GH_TOKEN}" \
@@ -67,19 +67,19 @@ jobs:
                     fi
 
                     if [[ -z $tag || $tag == "null" ]]; then
-                      echo "Failed to resolve latest stable tag for ${repo}" >&2
+                      echo "Failed to resolve latest release tag for ${repo}" >&2
                       return 1
                     fi
                     printf '%s' "$tag"
                   }
 
-                  XRAY_TAG=$(gh_latest_stable_tag "XTLS/Xray-core")
-                  XUI_TAG=$(gh_latest_stable_tag "MHSanaei/3x-ui")
+                  XRAY_TAG=$(gh_latest_release_tag "XTLS/Xray-core" true)
+                  XUI_TAG=$(gh_latest_release_tag "MHSanaei/3x-ui")
                   if [[ ! "$XUI_TAG" =~ ^v([3-9]|[1-9][0-9])\. ]]; then
                     echo "3x-ui v3 or newer is required (found $XUI_TAG)" >&2
                     exit 1
                   fi
-                  IRAN_RULES_TAG=$(gh_latest_stable_tag "Chocolate4U/Iran-v2ray-rules")
+                  IRAN_RULES_TAG=$(gh_latest_release_tag "Chocolate4U/Iran-v2ray-rules")
 
                   # SQLite version: parse download.html. The page contains a CSV-like
                   # block (within HTML comments) listing all download files, e.g.:

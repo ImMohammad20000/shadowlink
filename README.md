@@ -74,7 +74,7 @@ Panel Database (3x-ui v3+): `/etc/x-ui/x-ui.db`
 
 با ایجاد هر `Release` جدید روی این ریپو، یک GitHub Action (فایل `.github/workflows/release.yml`) به صورت خودکار:
 
-- آخرین نسخه `Xray-core` (Windows-64، Linux amd64 و arm64) رو از https://github.com/XTLS/Xray-core
+- آخرین نسخه `Xray-core`، شامل نسخه‌های پیش‌انتشار (Windows-64، Linux amd64 و arm64) رو از https://github.com/XTLS/Xray-core
 - آخرین نسخه پایدار `3x-ui` v3+ (Linux amd64 و arm64) و اسکریپت و سرویس‌های همان نسخه رو از https://github.com/MHSanaei/3x-ui
 - آخرین نسخه `SQLite` (amd64 از فایل آماده sqlite.org و arm64 با کامپایل از سورس amalgamation سایت sqlite.org)
 - آخرین نسخه `Iran-v2ray-rules` (`geoip.dat` و `geosite.dat`) رو از https://github.com/Chocolate4U/Iran-v2ray-rules
